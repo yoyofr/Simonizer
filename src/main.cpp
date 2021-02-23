@@ -229,7 +229,7 @@ void simon_jingleHighscoreBeaten() {
     vTaskDelay(10);
     display_animateLed(SIMON_LEDANIM_NEWHIGHSCORE,false);
   }
-  void display_clearLeds();
+  display_clearLeds();
 }
 
 void simon_jingleEndNewHighscore() {
@@ -590,9 +590,9 @@ void simon_stdGameTurn(int player_buttonPressed) {
     display_score();
     display_update();
     for (int i=0;i<player_targetSequenceIndex;i++) {      
-      button_playBtn(player_sequenceTarget[i]);
       delay(simon_gameSpeed[player_level]);
       button_stopCurrent();
+      button_playBtn(player_sequenceTarget[i]);      
     }
     ////////////////////////////////////////////////////////
     //restart player position to beginning of sequence
