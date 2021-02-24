@@ -1,9 +1,10 @@
 #define BUTTON_LONG_PRESS_THRESHOLD 512
 #define SIMON_MAX_LEVEL 10
-#define SIMON_DEFAULT_VOLUME 1
-#define SIMON_DEFAULT_HIGHSCORE 8
+#define SIMON_DEFAULT_VOLUME 2
+#define SIMON_DEFAULT_HIGHSCORE 0
 #define SIMON_MAX_SEQUENCE 64
 #define SIMON_NB_PLAY_BUTTONS 6
+
 
 #define VBAT_IN 35
 
@@ -26,42 +27,83 @@
 
 #define FORMAT_LITTLEFS_IF_FAILED false
 
-#include <Arduino.h>
+enum {
+  SIMON_MODE_WELCOME_ANIM,
+  SIMON_MODE_ATTRACT,
+  SIMON_MODE_IDLE,
+  SIMON_MODE_STD_GAME,
+  SIMON_MODE_STD_LEVEL_CLEAR,
+  SIMON_MODE_STD_FAILED,
+  SIMON_MODE_STD_GAMEOVER,
+  SIMON_MODE_LOST,
+  SIMON_MODE_END_HIGHSCORE,
+  SIMON_MODE_DEBUG_BUTTON=99
+};
 
+#define SIMON_MODE_STARTMODE SIMON_MODE_WELCOME_ANIM //SIMON_MODE_DEBUG_BUTTON
+
+enum {
+  SIMON_GAME_TURN_SIMON,
+  SIMON_GAME_TURN_PLAYER
+};
+enum {
+  SIMON_LEDANIM_WELCOME,
+  SIMON_LEDANIM_LOST,
+  SIMON_LEDANIM_NEWHIGHSCORE,
+  SIMON_LEDANIM_ENDNEWHIGHSCORE
+};
+
+
+
+#include <Arduino.h>
+#include "globals.h"
 #include <Wire.h>
 //#include <U8x8lib.h>
 #include <U8g2lib.h>
 
-char buttons_led_gpio[] PROGMEM={BTN1_LED,BTN2_LED,BTN3_LED,BTN4_LED,BTN5_LED,BTN6_LED};
+char btn_led_gpio[] PROGMEM={BTN1_LED,BTN2_LED,BTN3_LED,BTN4_LED,BTN5_LED,BTN6_LED};
 
-#include <WiFi.h>
 #include <FS.h>
 #include <LITTLEFS.h>
-#include <SD.h>
-#include "AudioFileSourceFS.h"
-#include "AudioGeneratorMP3.h"
-#include "AudioOutputI2S.h"
+#include "audioFunctions.h"
 
-AudioGeneratorMP3 *snd_jingle;
-AudioGeneratorMP3 *snd_beep;
-AudioFileSourceFS *file_jingle;
-AudioFileSourceFS *file_beep;
-AudioOutputI2S *audio_output;
 
 //U8X8_SSD1306_128X64_NONAME_SW_I2C u8x8(/* clock=*/ 32, /* data=*/ 33, /* reset=*/ U8X8_PIN_NONE);   // OLEDs without Reset of the Display
 U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, /* clock=*/ 32, /* data=*/ 33, /* reset=*/ U8X8_PIN_NONE);   // All Boards without Reset of the Display
 
 
+extern const uint8_t music_hs_start[] asm("_binary_progdata_tetris_gb_final_nsf_start");
+extern const uint8_t music_hs_end[]   asm("_binary_progdata_tetris_gb_final_nsf_end");
+extern const uint8_t music_smb_start[] asm("_binary_progdata_smb_nsf_start");
+extern const uint8_t music_smb_end[]   asm("_binary_progdata_smb_nsf_end");
 
-//extern const uint8_t music_mp3_start[] asm("_binary_src_data_music_mp3_start");
-//extern const uint8_t music_mp3_end[] asm("_binary_src_data_music_mp3_end");
 
-//const uint8_t *buttons_beep_data[] PROGMEM={beep1_wav_start,beep2_wav_start,beep3_wav_start,beep4_wav_start,beep5_wav_start,beep6_wav_start};
-//const int buttons_beep_data_size[] PROGMEM={beep1_wav_end-beep1_wav_start,beep2_wav_end-beep2_wav_start,beep3_wav_end-beep3_wav_start,beep4_wav_end-beep4_wav_start,beep5_wav_end-beep5_wav_start,beep6_wav_end-beep6_wav_start};
 
-const char *buttons_beep_mp3file[] PROGMEM={"/beep1.mp3","/beep2.mp3","/beep3.mp3","/beep4.mp3","/beep5.mp3","/beep6.mp3"};
-//const char *buttons_beep_midifile[] PROGMEM={"/beep1.mid","/beep2.mid","/beep3.mid","/beep4.mid","/beep5.mid","/beep6.mid"};
-int button_playingBtn;
+
+extern const uint8_t beep1_raw_start[] asm("_binary_progdata_beep1_raw_start");
+extern const uint8_t beep1_raw_end[] asm("_binary_progdata_beep1_raw_end");
+extern const uint8_t beep2_raw_start[] asm("_binary_progdata_beep2_raw_start");
+extern const uint8_t beep2_raw_end[] asm("_binary_progdata_beep2_raw_end");
+extern const uint8_t beep3_raw_start[] asm("_binary_progdata_beep3_raw_start");
+extern const uint8_t beep3_raw_end[] asm("_binary_progdata_beep3_raw_end");
+extern const uint8_t beep4_raw_start[] asm("_binary_progdata_beep4_raw_start");
+extern const uint8_t beep4_raw_end[] asm("_binary_progdata_beep4_raw_end");
+extern const uint8_t beep5_raw_start[] asm("_binary_progdata_beep5_raw_start");
+extern const uint8_t beep5_raw_end[] asm("_binary_progdata_beep5_raw_end");
+extern const uint8_t beep6_raw_start[] asm("_binary_progdata_beep6_raw_start");
+extern const uint8_t beep6_raw_end[] asm("_binary_progdata_beep6_raw_end");
+
+
+
+const uint8_t *btn_beep_data[] PROGMEM={beep1_raw_start,beep2_raw_start,beep3_raw_start,beep4_raw_start,beep5_raw_start,beep6_raw_start};
+const int btn_beep_data_size[] PROGMEM={beep1_raw_end-beep1_raw_start,beep2_raw_end-beep2_raw_start,beep3_raw_end-beep3_raw_start,beep4_raw_end-beep4_raw_start,beep5_raw_end-beep5_raw_start,beep6_raw_end-beep6_raw_start};
+
+const char *btn_beep_mp3file[] PROGMEM={"/beep1.mp3","/beep2.mp3","/beep3.mp3","/beep4.mp3","/beep5.mp3","/beep6.mp3"};
+int btn_playingBtn;
+char btn_playingBtn_channel;
+int btn_pressed=-1;
+int btn_lastPressed=-1;
+
 
 int btn_cmd_pressed;
 
@@ -81,27 +123,11 @@ char player_level,player_turn,player_highscore;
 char player_newhighscore;
 
 
-enum {
-  SIMON_MODE_WELCOME_ANIM,
-  SIMON_MODE_ATTRACT,
-  SIMON_MODE_IDLE,
-  SIMON_MODE_STD_GAME,
-  SIMON_MODE_STD_LEVEL_CLEAR,
-  SIMON_MODE_STD_FAILED,
-  SIMON_MODE_STD_GAMEOVER
-};
-enum {
-  SIMON_GAME_TURN_SIMON,
-  SIMON_GAME_TURN_PLAYER
-};
 
-char simon_mainMode=SIMON_MODE_WELCOME_ANIM;
+char simon_mainMode=SIMON_MODE_STARTMODE;
 long simon_currentModeElapsed=0;
 void simon_stdGameTurn(int player_buttonPressed);
 
-TaskHandle_t task_audio;
-SemaphoreHandle_t audioSemaphore; 
-void task_audioLoop(void *parameter);
 
 int display_width,display_height;
 enum {
@@ -110,8 +136,8 @@ enum {
   MSG_ALIGN_RIGHT=2
 };
 
-void audio_init();
-void audio_updateVolume();
+
+
 
 void button_stopCurrent();
 void display_message(char line,const char *msg,char alignement);
@@ -127,16 +153,10 @@ void display_batteryLevel();
 void set_buttonLED(int btn_index,bool btn_led_on);
 
 void simon_startGame();
-void simon_jingleEndNewHighscore();
-void simon_jingleHighscoreBeaten();
-void simon_jingleLost();
+void simon_EndNewHighscore();
+void simon_HighscoreBeaten();
+void simon_Lost();
 
-enum {
-  SIMON_LEDANIM_WELCOME,
-  SIMON_LEDANIM_LOST,
-  SIMON_LEDANIM_NEWHIGHSCORE,
-  SIMON_LEDANIM_ENDNEWHIGHSCORE
-};
 
 void display_animateLed(char anim_index,bool reset_cnt) {
   static int cnt=0;
@@ -199,197 +219,82 @@ void display_animateLed(char anim_index,bool reset_cnt) {
   cnt++;
 }
 
-void simon_jingleHighscoreBeaten() {
-  //wait for any previous beep sound to end 1st
-  while (snd_beep) {
-    vTaskDelay(10);
-  }
-  xSemaphoreTake(audioSemaphore, portMAX_DELAY);
-  if (snd_jingle) {    
-    snd_jingle->stop();
-    file_jingle->close();
-    delete file_jingle;
-    delete snd_jingle;
-    file_jingle=NULL;
-    snd_jingle=NULL;    
-  }
-  file_jingle = new AudioFileSourceFS(LITTLEFS,"/NewHighscore.mp3");
-  snd_jingle = new AudioGeneratorMP3();
-  snd_jingle->begin(file_jingle, audio_output);
-  xSemaphoreGive(audioSemaphore);
-
+void simon_HighscoreBeaten() {
+  audio_startVgm(music_smb_start, music_smb_end-music_smb_start,31,1000);
+  
   display_clear();
   display_highscore();
+  display_batteryLevel();
   display_message(3,"Highscore battu!",MSG_ALIGN_CENTER);
   display_score();
   display_update();
 
   display_animateLed(SIMON_LEDANIM_NEWHIGHSCORE,true);
-  while (snd_jingle) {    
+  while (audio_isChannelActive(AUDIO_BGMUS_CHANNEL)) {    
     vTaskDelay(10);
     display_animateLed(SIMON_LEDANIM_NEWHIGHSCORE,false);
   }
   display_clearLeds();
 }
 
-void simon_jingleEndNewHighscore() {
-  //wait for any previous beep sound to end 1st
-  while (snd_beep) {
-    vTaskDelay(10);
-  }
-  xSemaphoreTake(audioSemaphore, portMAX_DELAY);
-  if (snd_jingle) {    
-    snd_jingle->stop();
-    file_jingle->close();
-    delete file_jingle;
-    delete snd_jingle;
-    file_jingle=NULL;
-    snd_jingle=NULL;    
-  }
-  file_jingle = new AudioFileSourceFS(LITTLEFS,"/EndNewHighscore.mp3");
-  snd_jingle = new AudioGeneratorMP3();
-  snd_jingle->begin(file_jingle, audio_output);
-  xSemaphoreGive(audioSemaphore);
-
-  display_animateLed(SIMON_LEDANIM_ENDNEWHIGHSCORE,true);
-  while (snd_jingle) {    
-    vTaskDelay(10);
-    display_animateLed(SIMON_LEDANIM_ENDNEWHIGHSCORE,false);
-  }
+void simon_welcomeMusic() {
+  audio_startVgm(music_smb_start, music_smb_end-music_smb_start,25,1200);
 }
 
-void simon_jingleLost() {
-  //wait for any previous mp3 beep sound to end 1st
-  while (snd_beep) {
-    vTaskDelay(10);
-  }
-  xSemaphoreTake(audioSemaphore, portMAX_DELAY);
-  if (snd_jingle) {    
-    snd_jingle->stop();
-    file_jingle->close();
-    delete file_jingle;
-    delete snd_jingle;
-    file_jingle=NULL;
-    snd_jingle=NULL;    
-  }
-  file_jingle = new AudioFileSourceFS(LITTLEFS,"/Lost.mp3");
-  snd_jingle = new AudioGeneratorMP3();
-  snd_jingle->begin(file_jingle, audio_output);
-  xSemaphoreGive(audioSemaphore);
+void simon_EndNewHighscore() {  
+  audio_startVgm(music_hs_start, music_hs_end-music_hs_start,4,60000);
 
   display_clear();
   display_highscore();
+  display_batteryLevel();
+  display_score();
+  display_message(3,"Nouveau highscore!",MSG_ALIGN_CENTER);
+  display_update();
+  
+  display_animateLed(SIMON_LEDANIM_ENDNEWHIGHSCORE,true);  
+}
+
+void simon_Lost() {
+  audio_startVgm(music_smb_start, music_smb_end-music_smb_start,14,3000);
+
+  display_clear();
+  display_highscore();
+  display_batteryLevel();
   display_score();
   display_gameover();
   display_message(4,message_buttonKO[random(sizeof(message_buttonKO)/sizeof(char*))],MSG_ALIGN_CENTER);        
   display_update();
 
-   display_animateLed(SIMON_LEDANIM_LOST,true);
-  while (snd_jingle) {    
-    vTaskDelay(10);
-    display_animateLed(SIMON_LEDANIM_LOST,false);
-  }  
-  button_stopCurrent();
+  display_animateLed(SIMON_LEDANIM_LOST,true);  
 }
 
 void set_buttonLED(int btn_index,bool btn_led_on) {
   if ((btn_index<0)||(btn_index>SIMON_NB_PLAY_BUTTONS-1)) return;
-  if (btn_led_on) digitalWrite(buttons_led_gpio[btn_index],HIGH);
-  else digitalWrite(buttons_led_gpio[btn_index],LOW);
+  if (btn_led_on) digitalWrite(btn_led_gpio[btn_index],HIGH);
+  else digitalWrite(btn_led_gpio[btn_index],LOW);
 }
 
 void play_buttonBeep(int btn_index) {
-  if ((btn_index<0)||(btn_index>SIMON_NB_PLAY_BUTTONS-1)) return;
-
-  xSemaphoreTake(audioSemaphore, portMAX_DELAY);
+  audio_startFx(AUDIO_FX_CHANNEL1,(int16_t*)btn_beep_data[btn_index],btn_beep_data_size[btn_index],0,0);
+  btn_playingBtn_channel=AUDIO_FX_CHANNEL1;
   button_stopCurrent();
-  if (snd_beep) {    
-    snd_beep->stop();
-    file_beep->close();
-    delete file_beep;
-    delete snd_beep;
-    file_beep=NULL;
-    snd_beep=NULL;    
-  }
-  file_beep = new AudioFileSourceFS(LITTLEFS,buttons_beep_mp3file[btn_index]);// PROGMEM( buttons_beep_data[btn_index], buttons_beep_data_size[btn_index] );
-  snd_beep = new AudioGeneratorMP3();
-  snd_beep->begin(file_beep, audio_output);
-  xSemaphoreGive(audioSemaphore);
-  button_playingBtn=btn_index;
+  btn_playingBtn=btn_index;  
 }
 
 void button_playBtn(int btn_index) {
-  //Do not repeat same button if already taken into account (wait for end of snd_beep/led off)
-  //if (btn_index==button_playingBtn) return; 
-  
   play_buttonBeep(btn_index);
   set_buttonLED(btn_index,1);
 }
 
 void button_stopCurrent() {
-  if (button_playingBtn>=0) {
-    set_buttonLED(button_playingBtn,false);          
-    button_playingBtn=-1;
-  }
-}
-
-void task_audioLoop(void *parameter) {
-  for (;;) {
-    vTaskDelay(5/portTICK_PERIOD_MS);
-
-    xSemaphoreTake(audioSemaphore, portMAX_DELAY);
-    if (snd_beep) {
-      if (snd_beep->isRunning()) {
-        if (!snd_beep->loop()) {          
-          snd_beep->stop();          
-        }        
-      } else {
-        file_beep->close();
-        delete file_beep;
-        delete snd_beep;
-        file_beep=NULL;
-        snd_beep=NULL;
-        button_stopCurrent();
-      }
-    }
-    if (snd_jingle) {
-      if (snd_jingle->isRunning()) {
-        if (!snd_jingle->loop()) snd_jingle->stop();
-      } else {
-        file_jingle->close();
-        delete file_jingle;
-        delete snd_jingle;
-        file_jingle=NULL;
-        snd_jingle=NULL;
-      }
-    }
-    xSemaphoreGive(audioSemaphore);
-    
+  if (btn_playingBtn>=0) {
+    set_buttonLED(btn_playingBtn,false);          
+    btn_playingBtn=-1;
   }
 }
 
 void audio_updateVolume() {
-  audio_output->SetGain(simon_sndVolTable[simon_sndVolume]);
-}
-
-void audio_init() {
-  audioLogger = &Serial;
-  audio_output = new AudioOutputI2S(0,0,16,0);
-  audio_output->SetPinout(26,27,25);
-  audio_updateVolume();
-
-  snd_jingle=NULL;
-  snd_beep=NULL;
-  
-  audioSemaphore = xSemaphoreCreateMutex();
-  xTaskCreatePinnedToCore(
-    task_audioLoop, /* Function to implement the task */
-    "Task audio", /* Name of the task */
-    8192,  /* Stack size in words */
-    NULL,  /* Task input parameter */
-    1,  /* Priority of the task */
-    &task_audio,  /* Task handle. */
-    0); /* Core where the task should run */
+  //set volume: simon_sndVolTable[simon_sndVolume]);
 }
 
 void setup() {
@@ -400,7 +305,7 @@ void setup() {
 
   simon_sndVolume=SIMON_DEFAULT_VOLUME;
   btn_cmd_pressed=0;
-  button_playingBtn=-1;
+  btn_playingBtn=-1;
   player_highscore=SIMON_DEFAULT_HIGHSCORE;
 
   if(!LITTLEFS.begin(FORMAT_LITTLEFS_IF_FAILED)){
@@ -440,7 +345,10 @@ void setup() {
   delay(1000);
   display_clear();
   display_highscore();
+  display_batteryLevel();
   display_update();  
+
+  simon_welcomeMusic();
 }
 
 
@@ -497,9 +405,38 @@ void display_score() {
   u8g2.drawStr(0,7*7,strtmp);
 }
 
+void simon_gameEvents(){
+  /////////////////////////////////
+  // Game Logic
+  ///////////////////////////////
+  static long lastMillis=millis();
+  long currentMillis=millis();
+
+  //check if current button should be stopped
+  if (btn_playingBtn>=0) {
+    //a button is playing
+    if (!audio_isChannelActive(btn_playingBtn_channel)) button_stopCurrent();
+  }
+  
+  simon_currentModeElapsed+=currentMillis-lastMillis;
+  switch (simon_mainMode) {
+    case SIMON_MODE_DEBUG_BUTTON:
+      if (btn_pressed!=btn_lastPressed) button_playBtn(btn_pressed);
+      break;    
+    case SIMON_MODE_STD_GAME:
+    //process standard game turn
+      if (btn_pressed==btn_lastPressed) simon_stdGameTurn(-1); // if long_press, pass -1 to avoid double registration of button press
+      else simon_stdGameTurn(btn_pressed);
+      break;
+  }
+  lastMillis=currentMillis;
+}
+
 void input_check() {
-  int btn_pressed=-1;
-  static int btn_lastPressed=-1;
+  
+  btn_lastPressed=btn_pressed;
+
+  btn_pressed=-1;
   if (digitalRead(BTN1_IN)==0) {
     btn_pressed=0;
   } else if (digitalRead(BTN2_IN)==0) {
@@ -534,49 +471,13 @@ void input_check() {
       display_clear();    
       display_message(3,simon_sndVolLabel[simon_sndVolume],MSG_ALIGN_CENTER);
       display_update();
-      delay(500);      
+      delay(300);      
     }
     btn_cmd_pressed=0;
   }
 
-/////////////////////////////////
-// Game Logic
-///////////////////////////////
-static long lastMillis=millis();
-long currentMillis=millis();
   
-  simon_currentModeElapsed+=currentMillis-lastMillis;
-  switch (simon_mainMode) {
-    case SIMON_MODE_WELCOME_ANIM:
-    // WELCOME Animation, stop at 1st press
-      if (btn_pressed>=0) {      
-        display_clearLeds();
-        button_stopCurrent();
-        simon_startGame();
-        delay(1000);
-
-        display_clear();
-        display_highscore();
-        display_update();
-      }
-      break;
-    case SIMON_MODE_STD_GAME:
-    //process standard game turn
-      if (btn_pressed==btn_lastPressed) simon_stdGameTurn(-1); // if long_press, pass -1 to avoid double registration of button press
-      else simon_stdGameTurn(btn_pressed);
-      break;
-  }
-  lastMillis=currentMillis;
   
-  /*if (btn_pressed==btn_lastPressed) {
-    //Long press
-  } else {
-    if (btn_pressed>=0) {
-      //a button has been pressed
-      button_playBtn(btn_pressed);    
-    }
-  }*/
-  btn_lastPressed=btn_pressed;
 }
 
 void simon_stdGameTurn(int player_buttonPressed) {
@@ -586,6 +487,7 @@ void simon_stdGameTurn(int player_buttonPressed) {
     ////////////////////////////
     display_clear();
     display_highscore();
+    display_batteryLevel();
     display_message(3,message_nextSequence[random(sizeof(message_nextSequence)/sizeof(char*))],MSG_ALIGN_CENTER);
     display_score();
     display_update();
@@ -602,6 +504,7 @@ void simon_stdGameTurn(int player_buttonPressed) {
     player_turn=SIMON_GAME_TURN_PLAYER;
     display_clear();
     display_highscore();
+    display_batteryLevel();
     display_message(3,"A ton tour",MSG_ALIGN_CENTER);
     display_score();
     display_update();
@@ -625,21 +528,22 @@ void simon_stdGameTurn(int player_buttonPressed) {
         if (player_currentSequenceIndex==player_targetSequenceIndex) {
           if (player_highscore<player_targetSequenceIndex) {
             player_highscore=player_targetSequenceIndex;
-            if (!player_newhighscore) simon_jingleHighscoreBeaten();
+            if (!player_newhighscore) simon_HighscoreBeaten();
             player_newhighscore=player_highscore;            
           }          
           player_targetSequenceIndex++;          
           player_turn=SIMON_GAME_TURN_SIMON;          
           display_clear();
           display_highscore();
+          display_batteryLevel();
           display_message(3,message_buttonOK[random(sizeof(message_buttonOK)/sizeof(char*))],MSG_ALIGN_CENTER);
           display_score();
           display_update();
-          delay(1000);          
+          delay(500);          
         } else {
           display_clear();
           display_highscore();
-          
+          display_batteryLevel();
           display_score();
           display_update();
         }
@@ -647,24 +551,13 @@ void simon_stdGameTurn(int player_buttonPressed) {
         ////////////////////////////////////////////////////////
         //if not, game is lost, go back to welcome screen
         ////////////////////////////////////////////////////////                
-        simon_mainMode=SIMON_MODE_WELCOME_ANIM;
-        
-        simon_jingleLost();
-        
         if (player_newhighscore) {
-          display_clear();
-          display_highscore();
-          display_score();
-          display_message(3,"Nouveau highscore!",MSG_ALIGN_CENTER);
-          display_update();
-          simon_jingleEndNewHighscore();          
+          simon_mainMode=SIMON_MODE_END_HIGHSCORE;
+          simon_EndNewHighscore();
+        } else {
+          simon_mainMode=SIMON_MODE_LOST;
+          simon_Lost();
         }
-
-
-        /*display_clear();
-        display_highscore();
-        display_score();
-        display_update();*/
       }
     }
   }
@@ -676,6 +569,7 @@ void simon_startGame() {
 
   display_clear();
   display_highscore();
+  display_batteryLevel();
   display_message(3,"Preparation",MSG_ALIGN_CENTER);
   display_update();
   for (int i=0;i<SIMON_MAX_SEQUENCE;i++) player_sequenceTarget[i]=random(SIMON_NB_PLAY_BUTTONS);
@@ -706,7 +600,7 @@ void display_batteryLevel() {
   char strtmp[16];
   float val_bat=map(bat_read_avg,0,4095*BATTERY_READ_NB_SAMPLES,0,330)*2.195/100.0f;
   sprintf(strtmp,"%.2fv",val_bat);
-  u8g2.drawStr(display_width-u8g2.getStrWidth(strtmp),7,strtmp);
+  u8g2.drawStr(display_width-u8g2.getStrWidth(strtmp),7,strtmp);  
 }
 
 void loop() {
@@ -715,27 +609,59 @@ void loop() {
   long curMillis=millis();
   cnt++;
 
-  
+  if (!(cnt&2047)) DBG_PRINT_RAMAVAIL
   
   input_check();
-  
+
+  simon_gameEvents();
 
   switch (simon_mainMode) {
+    case SIMON_MODE_DEBUG_BUTTON:
+        break;
     case SIMON_MODE_WELCOME_ANIM:
-      
-      if (!(cnt&3)) display_animateLed(SIMON_LEDANIM_WELCOME,false);
-      if ((cnt&127)==0) {
+    // WELCOME Animation, stop at 1st press
+      if (btn_pressed!=btn_lastPressed) {      
+        display_clearLeds();
+        button_stopCurrent();
+        simon_startGame();
+        delay(500);
+                
         display_clear();
         display_highscore();
-        display_message(3,"APPUIE POUR",MSG_ALIGN_CENTER);
-        display_message(5,"JOUER",MSG_ALIGN_CENTER);
         display_batteryLevel();
         display_update();
-      } else if ((cnt&127)==127-32)  {
-        display_clear();
-        display_highscore();
-        display_batteryLevel();
-        display_update();        
+      } else {            
+        if (!(cnt&3)) display_animateLed(SIMON_LEDANIM_WELCOME,false);
+        if ((cnt&127)==0) {
+          display_clear();
+          display_highscore();
+          display_batteryLevel();
+          display_message(3,"APPUIE POUR",MSG_ALIGN_CENTER);
+          display_message(5,"JOUER",MSG_ALIGN_CENTER);        
+          display_update();
+        } else if ((cnt&127)==127-32)  {
+          display_clear();
+          display_highscore();
+          display_batteryLevel();
+          display_update();        
+        }
+      }
+      break;
+    case SIMON_MODE_LOST:      
+      if ((btn_pressed!=btn_lastPressed)||(!audio_isChannelActive[AUDIO_BGMUS_CHANNEL])) {
+        // Jingle finished - go back to welcome anim
+        display_clearLeds();
+        simon_mainMode=SIMON_MODE_WELCOME_ANIM;
+      } else display_animateLed(SIMON_LEDANIM_LOST,false);      
+      break;
+    case SIMON_MODE_END_HIGHSCORE:
+      if ((btn_pressed=!btn_lastPressed)||(!audio_isChannelActive[AUDIO_BGMUS_CHANNEL])) {
+        // Jingle finished - go to lost anim
+        display_clearLeds();
+        simon_mainMode=SIMON_MODE_LOST;
+        simon_Lost();
+      } else {        
+        display_animateLed(SIMON_LEDANIM_ENDNEWHIGHSCORE,false);      
       }
       break;
     default:
