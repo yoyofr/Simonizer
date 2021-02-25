@@ -406,30 +406,7 @@ void display_score() {
 }
 
 void simon_gameEvents(){
-  /////////////////////////////////
-  // Game Logic
-  ///////////////////////////////
-  static long lastMillis=millis();
-  long currentMillis=millis();
-
-  //check if current button should be stopped
-  if (btn_playingBtn>=0) {
-    //a button is playing
-    if (!audio_isChannelActive(btn_playingBtn_channel)) button_stopCurrent();
-  }
   
-  simon_currentModeElapsed+=currentMillis-lastMillis;
-  switch (simon_mainMode) {
-    case SIMON_MODE_DEBUG_BUTTON:
-      if (btn_pressed!=btn_lastPressed) button_playBtn(btn_pressed);
-      break;    
-    case SIMON_MODE_STD_GAME:
-    //process standard game turn
-      if (btn_pressed==btn_lastPressed) simon_stdGameTurn(-1); // if long_press, pass -1 to avoid double registration of button press
-      else simon_stdGameTurn(btn_pressed);
-      break;
-  }
-  lastMillis=currentMillis;
 }
 
 void input_check() {
@@ -475,9 +452,6 @@ void input_check() {
     }
     btn_cmd_pressed=0;
   }
-
-  
-  
 }
 
 void simon_stdGameTurn(int player_buttonPressed) {
@@ -611,19 +585,31 @@ void loop() {
 
   if (!(cnt&2047)) DBG_PRINT_RAMAVAIL
   
+ 
   input_check();
 
-  simon_gameEvents();
-
+   /////////////////////////////////
+  // Game Logic
+  ///////////////////////////////
+  //check if current button should be stopped
+  if (btn_playingBtn>=0) {
+    //a button is playing
+    if (!audio_isChannelActive(btn_playingBtn_channel)) button_stopCurrent();
+  }
+  
+  simon_currentModeElapsed+=curMillis-lastMillis;
+  
   switch (simon_mainMode) {
     case SIMON_MODE_DEBUG_BUTTON:
+        if ((btn_pressed>=0)&&(btn_pressed!=btn_lastPressed)) button_playBtn(btn_pressed);
         break;
     case SIMON_MODE_WELCOME_ANIM:
     // WELCOME Animation, stop at 1st press
-      if (btn_pressed!=btn_lastPressed) {      
+      if ((btn_pressed>=0)&&(btn_pressed!=btn_lastPressed)) {      
         display_clearLeds();
         button_stopCurrent();
-        simon_startGame();
+        simon_startGame();        
+
         delay(500);
                 
         display_clear();
@@ -648,14 +634,14 @@ void loop() {
       }
       break;
     case SIMON_MODE_LOST:      
-      if ((btn_pressed!=btn_lastPressed)||(!audio_isChannelActive[AUDIO_BGMUS_CHANNEL])) {
+      if (((btn_pressed>=0)&&(btn_pressed!=btn_lastPressed))||(!audio_isChannelActive(AUDIO_BGMUS_CHANNEL))) {
         // Jingle finished - go back to welcome anim
         display_clearLeds();
         simon_mainMode=SIMON_MODE_WELCOME_ANIM;
       } else display_animateLed(SIMON_LEDANIM_LOST,false);      
       break;
     case SIMON_MODE_END_HIGHSCORE:
-      if ((btn_pressed=!btn_lastPressed)||(!audio_isChannelActive[AUDIO_BGMUS_CHANNEL])) {
+      if (((btn_pressed>=0)&&(btn_pressed!=btn_lastPressed))||(!audio_isChannelActive(AUDIO_BGMUS_CHANNEL))) {
         // Jingle finished - go to lost anim
         display_clearLeds();
         simon_mainMode=SIMON_MODE_LOST;
@@ -664,9 +650,17 @@ void loop() {
         display_animateLed(SIMON_LEDANIM_ENDNEWHIGHSCORE,false);      
       }
       break;
+    case SIMON_MODE_STD_GAME:
+      //process standard game turn
+        if (btn_pressed==btn_lastPressed) simon_stdGameTurn(-1); // if long_press, pass -1 to avoid double registration of button press
+        else simon_stdGameTurn(btn_pressed);
+      break;
     default:
       break;
   }
+ 
+
+  simon_gameEvents();
 
   delay(5);
 }

@@ -5,7 +5,7 @@
 
 // VGM & NSF decoder
 #include "vgm_file.h"
-VgmFile m_vgm;
+VgmFile *m_vgm;
 char m_vgm_opened;
 
 
@@ -21,16 +21,31 @@ void task_audioLoop(void *parameter);
 
 audio_channel_t audio_channels[MAX_AUDIO_CHANNELS];
 
-void audio_startVgm(const uint8_t *buffer, int size,int start_track,int max_duration) {
-    if (m_vgm_opened) m_vgm.close();
-    m_vgm.setSampleFrequency(I2S_SAMPLERATE);
-    m_vgm.open( buffer, size );
-    m_vgm.setVolume( 10 ); //10%
-    m_vgm.setFading( true );
-    if (start_track>=0) m_vgm.setTrack(start_track);
-    if (max_duration>0) m_vgm.setMaxDuration(max_duration);
+void audio_stopVgm() {
+    Serial.println("stop vgm");
+    if (m_vgm_opened) {
+        m_vgm_opened=0;
+        m_vgm->close();
+        delete m_vgm;
+        m_vgm=NULL;
+    }
+}
+
+void audio_startVgm(const uint8_t *buffer, int size,int start_track,int max_duration) {    
+    xSemaphoreTake(audioSemaphore, portMAX_DELAY);
+    audio_stopVgm();
+    m_vgm = new VgmFile();    
+    m_vgm->setSampleFrequency(I2S_SAMPLERATE);
+    m_vgm->open( buffer, size );    
+    if (start_track>=0) m_vgm->setTrack(start_track);
+    if (max_duration>0) m_vgm->setMaxDuration(max_duration);
+    m_vgm->setFading( true );    
+
+    m_vgm->setVolume( 10 ); //10%
+    
     m_vgm_opened=1;
     audio_channels[AUDIO_BGMUS_CHANNEL].status=AUDIO_CHANNEL_ACTIVE;
+    xSemaphoreGive(audioSemaphore);
 }
 
 void audio_init() {
@@ -100,13 +115,12 @@ void audio_processChannels() {
                 } else if (i==AUDIO_BGMUS_CHANNEL) {
                     //////////////////////////
                     // VGM
-                    int bytes_available = m_vgm.decodePcmMono(sndPtr, to_copy);
-                    if ( bytes_available <= 0 ) {
-                        m_vgm.close();
-                        m_vgm_opened=0;
+                    int bytes_available = m_vgm->decodePcmMono(sndPtr, to_copy);
+                    if ( bytes_available <= 0 ) {                        
+                        audio_stopVgm();
                         audio_channels[AUDIO_BGMUS_CHANNEL].status=AUDIO_CHANNEL_STOPPED;
                     }
-                    sndPtr+=to_copy;
+                    sndPtr+=bytes_available;
                     to_copy-=bytes_available;
                 } else if (audio_channels[i].loop) {
                     //////////////////////////
