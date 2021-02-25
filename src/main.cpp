@@ -77,6 +77,14 @@ extern const uint8_t music_hs_end[]   asm("_binary_progdata_tetris_gb_final_nsf_
 extern const uint8_t music_smb_start[] asm("_binary_progdata_smb_nsf_start");
 extern const uint8_t music_smb_end[]   asm("_binary_progdata_smb_nsf_end");
 
+extern const uint8_t music_test1_start[] asm("_binary_progdata_ym2612_vgm_start");
+extern const uint8_t music_test1_end[]   asm("_binary_progdata_ym2612_vgm_end");
+extern const uint8_t music_test2_start[] asm("_binary_progdata_sn76489_vgm_start");
+extern const uint8_t music_test2_end[]   asm("_binary_progdata_sn76489_vgm_end");
+extern const uint8_t music_test3_start[] asm("_binary_progdata_test8_vgm_start");
+extern const uint8_t music_test3_end[]   asm("_binary_progdata_test8_vgm_end");
+extern const uint8_t music_test4_start[] asm("_binary_progdata_test9_vgm_start");
+extern const uint8_t music_test4_end[]   asm("_binary_progdata_test9_vgm_end");
 
 
 
@@ -113,7 +121,7 @@ const char *message_nextSequence[]={"Voila la suite","Ca va se corser","Reste co
 int simon_gameSpeed[SIMON_MAX_LEVEL] PROGMEM={800,700,600,500,400,300,200,150,100,50};
 
 
-const float simon_sndVolTable[] PROGMEM={0,0.2,0.5,0.8};
+const float simon_sndVolTable[] PROGMEM={0,64,128,255};
 const char *simon_sndVolLabel[] PROGMEM={"SON OFF","SON MIN","SON MOYEN","SON MAX"};
 char simon_sndVolume;
 
@@ -220,7 +228,7 @@ void display_animateLed(char anim_index,bool reset_cnt) {
 }
 
 void simon_HighscoreBeaten() {
-  audio_startVgm(music_smb_start, music_smb_end-music_smb_start,31,1000);
+  audio_startVgm(music_smb_start, music_smb_end-music_smb_start,31,1000,0);
   
   display_clear();
   display_highscore();
@@ -238,11 +246,12 @@ void simon_HighscoreBeaten() {
 }
 
 void simon_welcomeMusic() {
-  audio_startVgm(music_smb_start, music_smb_end-music_smb_start,25,1200);
+  //audio_startVgm(music_smb_start, music_smb_end-music_smb_start,25,1200,0);
+  audio_startVgm(music_test4_start, music_test4_end-music_test4_start,25,1200,1);
 }
 
 void simon_EndNewHighscore() {  
-  audio_startVgm(music_hs_start, music_hs_end-music_hs_start,4,60000);
+  audio_startVgm(music_hs_start, music_hs_end-music_hs_start,4,60000,0);
 
   display_clear();
   display_highscore();
@@ -255,7 +264,7 @@ void simon_EndNewHighscore() {
 }
 
 void simon_Lost() {
-  audio_startVgm(music_smb_start, music_smb_end-music_smb_start,14,3000);
+  audio_startVgm(music_smb_start, music_smb_end-music_smb_start,14,3000,0);
 
   display_clear();
   display_highscore();
@@ -293,9 +302,7 @@ void button_stopCurrent() {
   }
 }
 
-void audio_updateVolume() {
-  //set volume: simon_sndVolTable[simon_sndVolume]);
-}
+
 
 void setup() {
   // put your setup code here, to run once:
@@ -332,7 +339,8 @@ void setup() {
   //u8g2.setPowerSave(0);
 
   audio_init();
-
+  audio_updateVolume(simon_sndVolTable[simon_sndVolume]);
+  
   u8g2.setFont(u8g2_font_profont10_tf);//u8g2_font_ncenB08_tr);
   u8g2.setFontMode(0);
   display_width=u8g2.getDisplayWidth();
@@ -444,7 +452,7 @@ void input_check() {
       //cmd => change volume
       simon_sndVolume++;
       if (simon_sndVolume>=sizeof(simon_sndVolTable)/sizeof(float)) simon_sndVolume=0;
-      audio_updateVolume();
+      audio_updateVolume(simon_sndVolTable[simon_sndVolume]);
       display_clear();    
       display_message(3,simon_sndVolLabel[simon_sndVolume],MSG_ALIGN_CENTER);
       display_update();
@@ -605,7 +613,8 @@ void loop() {
         break;
     case SIMON_MODE_WELCOME_ANIM:
     // WELCOME Animation, stop at 1st press
-      if ((btn_pressed>=0)&&(btn_pressed!=btn_lastPressed)) {      
+      if ((btn_pressed>=0)&&(btn_pressed!=btn_lastPressed)) {  
+        audio_stopVgm();    
         display_clearLeds();
         button_stopCurrent();
         simon_startGame();        
@@ -636,6 +645,7 @@ void loop() {
     case SIMON_MODE_LOST:      
       if (((btn_pressed>=0)&&(btn_pressed!=btn_lastPressed))||(!audio_isChannelActive(AUDIO_BGMUS_CHANNEL))) {
         // Jingle finished - go back to welcome anim
+        audio_stopVgm();
         display_clearLeds();
         simon_mainMode=SIMON_MODE_WELCOME_ANIM;
       } else display_animateLed(SIMON_LEDANIM_LOST,false);      
@@ -643,6 +653,7 @@ void loop() {
     case SIMON_MODE_END_HIGHSCORE:
       if (((btn_pressed>=0)&&(btn_pressed!=btn_lastPressed))||(!audio_isChannelActive(AUDIO_BGMUS_CHANNEL))) {
         // Jingle finished - go to lost anim
+        audio_stopVgm();
         display_clearLeds();
         simon_mainMode=SIMON_MODE_LOST;
         simon_Lost();

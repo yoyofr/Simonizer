@@ -38,10 +38,10 @@ typedef struct {
 
 
 void audio_init();
-void audio_updateVolume();
+void audio_updateVolume(int vol);
 void audio_startFx(char channel,int16_t *src_data,int src_size,char start_pos,int8_t loop_tgt);
 bool audio_isChannelActive(char channel);
-void audio_startVgm(const uint8_t *buffer, int size,int start_track,int max_duration);
+void audio_startVgm(const uint8_t *buffer, int size,int start_track,int max_duration,char isGen);
 void audio_stopVgm();
 
 #endif

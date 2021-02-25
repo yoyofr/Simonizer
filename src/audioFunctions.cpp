@@ -3,11 +3,14 @@
 
 #include "driver/i2s.h"
 
+int audio_vol=64;
+
 // VGM & NSF decoder
 #include "vgm_file.h"
+#include "vgmFunctions.h"
+
 VgmFile *m_vgm;
 char m_vgm_opened;
-
 
 int16_t sndBuffer[MAX_AUDIO_CHANNELS][AUDIO_BUFFSIZE_SMPL]; //mono
 int16_t sndBufferI2S[AUDIO_BUFFSIZE_SMPL*2]; //stereo
@@ -21,29 +24,49 @@ void task_audioLoop(void *parameter);
 
 audio_channel_t audio_channels[MAX_AUDIO_CHANNELS];
 
-void audio_stopVgm() {
-    Serial.println("stop vgm");
-    if (m_vgm_opened) {
-        m_vgm_opened=0;
-        m_vgm->close();
-        delete m_vgm;
-        m_vgm=NULL;
-    }
+
+// Volume: 0 / 255
+void audio_updateVolume(int vol) {
+    xSemaphoreTake(audioSemaphore, portMAX_DELAY);
+    audio_vol=vol;
+    xSemaphoreGive(audioSemaphore);
 }
 
-void audio_startVgm(const uint8_t *buffer, int size,int start_track,int max_duration) {    
+void audio_stopVgm() {
+    switch (m_vgm_opened) {
+        case 1:
+            Serial.println("stop vgm");
+            m_vgm_opened=0;
+            m_vgm->close();
+            delete m_vgm;
+            m_vgm=NULL;
+        break;
+        case 2:
+            Serial.println("stop vgmGen");
+            vgmGen_close();
+            m_vgm_opened=0;
+        break;
+    }        
+}
+
+
+void audio_startVgm(const uint8_t *buffer, int size,int start_track,int max_duration,char isGen) {    
     xSemaphoreTake(audioSemaphore, portMAX_DELAY);
     audio_stopVgm();
-    m_vgm = new VgmFile();    
-    m_vgm->setSampleFrequency(I2S_SAMPLERATE);
-    m_vgm->open( buffer, size );    
-    if (start_track>=0) m_vgm->setTrack(start_track);
-    if (max_duration>0) m_vgm->setMaxDuration(max_duration);
-    m_vgm->setFading( true );    
-
-    m_vgm->setVolume( 10 ); //10%
-    
-    m_vgm_opened=1;
+    if (isGen) {
+        vgmGen_init((uint8_t*)buffer,size,AUDIO_BUFFSIZE_SMPL);
+        vgmGen_setVolume(16);
+        m_vgm_opened=2;
+    } else {
+        m_vgm = new VgmFile();    
+        m_vgm->setSampleFrequency(I2S_SAMPLERATE);
+        m_vgm->open( buffer, size );    
+        if (start_track>=0) m_vgm->setTrack(start_track);
+        if (max_duration>0) m_vgm->setMaxDuration(max_duration);
+        m_vgm->setFading( true );    
+        m_vgm->setVolume( 10 ); //10%        
+        m_vgm_opened=1;
+    }
     audio_channels[AUDIO_BGMUS_CHANNEL].status=AUDIO_CHANNEL_ACTIVE;
     xSemaphoreGive(audioSemaphore);
 }
@@ -58,7 +81,7 @@ void audio_init() {
     sndBufferI2ScurrentPos=(byte*)&sndBufferI2S;
 
     // VGM
-    m_vgm_opened=0;
+    m_vgm_opened=0;    
 
     // Set I2S Audio config
     i2s_config_t i2s_config_dac = {
@@ -115,7 +138,15 @@ void audio_processChannels() {
                 } else if (i==AUDIO_BGMUS_CHANNEL) {
                     //////////////////////////
                     // VGM
-                    int bytes_available = m_vgm->decodePcmMono(sndPtr, to_copy);
+                    int bytes_available=0;
+                    switch (m_vgm_opened) {
+                        case 1:
+                            bytes_available = m_vgm->decodePcmMono(sndPtr, to_copy);
+                            break;
+                        case 2:
+                            bytes_available = vgmGen_fillbufferMono((int16_t *)sndPtr,to_copy);
+                            break;
+                    }
                     if ( bytes_available <= 0 ) {                        
                         audio_stopVgm();
                         audio_channels[AUDIO_BGMUS_CHANNEL].status=AUDIO_CHANNEL_STOPPED;
@@ -186,8 +217,8 @@ void audio_processBuffers() {
         //last buffer was processed, initiate a new one
         int16_t *sndPtr=sndBufferI2S;
         for (int i=0;i<AUDIO_BUFFSIZE_SMPL;i++) {        
-            *sndPtr++=(sndBuffer[0][i]+sndBuffer[1][i])>>1;
-            *sndPtr++=(sndBuffer[2][i]+sndBuffer[3][i])>>1;        
+            *sndPtr++=((int)(sndBuffer[0][i]+sndBuffer[1][i])*audio_vol)>>9;
+            *sndPtr++=((int)(sndBuffer[2][i]+sndBuffer[3][i])*audio_vol)>>9;
         }
         ret=i2s_write((i2s_port_t)I2S_PORTNB, (const char *)sndBufferI2ScurrentPos, AUDIO_BUFFSIZE_SMPL*2*2, &audio_bytes_written, 0);
         if (audio_bytes_written<AUDIO_BUFFSIZE_SMPL*2*2) {
